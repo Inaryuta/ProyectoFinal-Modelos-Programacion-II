@@ -1,5 +1,6 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
+const axios = require('axios');
 
 (async () => {
   const url = 'https://www.premierleague.com/results';
@@ -42,9 +43,46 @@ const fs = require('fs');
     return partidos;
   });
 
-  // Guardar los datos en un archivo JSON
-  fs.writeFileSync('matchData.json', JSON.stringify(matchData, null, 2));
+  // información adicional desde la API
+  const apiUrl = 'https://footballapi.pulselive.com/football/fixtures';
+  let pageNum = 0;
+  let allMatches = [];
+  let hasMoreData = true;
 
-  console.log('✅ Datos guardados en matchData.json');
+  while (hasMoreData) {
+    try {
+      const response = await axios.get(`${apiUrl}?comps=1&compSeasons=719&page=${pageNum}&pageSize=20&sort=desc&statuses=A,C&altIds=true&fast=false`, {
+        headers: {
+          'Origin': 'https://www.premierleague.com',
+          'Referer': 'https://www.premierleague.com/',
+          'User-Agent': 'Mozilla/5.0'
+        }
+      });
+
+      if (response.data && response.data.content.length > 0) {
+        response.data.content.forEach(match => {
+          allMatches.push({
+            id: match.id,
+            fecha: match.kickoff.label,
+            local: match.teams[0].team.name,
+            visitante: match.teams[1].team.name,
+            estadio: match.ground.name,
+            ciudad: match.ground.city,
+          });
+        });
+        pageNum++;
+      } else {
+        hasMoreData = false;
+      }
+    } catch (error) {
+      console.error('Error al obtener datos de la API:', error);
+      hasMoreData = false;
+    }
+  }
+
+  // Guardar los datos en un archivo JSON
+  fs.writeFileSync('matchData.json', JSON.stringify([...matchData, ...allMatches], null, 2));
+
+  console.log('Datos guardados en matchData.json');
   await browser.close();
 })();
